@@ -12,7 +12,7 @@ MYDIR=${2:?"Usage: $0 <to> <dir>"}
 #	--suppress-cc=author --suppress-cc=self \
 #	$MYDIR/00*.patch
 
-git send-email --dry-run --to "$MYTO" --cc-cmd=git-smart-cc.sh "$MYDIR"/*.patch
+git send-email --dry-run --to "$MYTO" "$MYDIR"/*.patch
 
 echo "Checklist:"
 echo "1. Test the patches"
@@ -20,4 +20,4 @@ echo "2. Update the cover letter"
 
 echo "If you're happy with the result of the command, copy-paste the
 following line and remove dry-run to actually send email"
-echo "git send-email --to $MYTO --cc-cmd=git-smart-cc.sh $MYDIR/*.patch"
+echo "git send-email --to $MYTO $MYDIR/*.patch"
