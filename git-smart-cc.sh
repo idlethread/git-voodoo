@@ -1,16 +1,27 @@
 #! /bin/bash
 #
-# git-smart-cc - send cover letter to all mailing lists referenced in a
-# patch series intended to be used as 'git send-email --cc-cmd=git-smart-cc
-# ...' done by Wolfram Sang in 2012-14, version 20140204 - WTFPLv2
+# git-smart-cc
+#
+# 1. send cover letter to everyone (people and mailing lists) referenced in
+# a patch series
+# 2. Be smart about who to put in TO and who in CC for each patch in the
+# series
+#
+# Intended to be used as 'git send-email --cc-cmd=git-smart-cc ...'
+# done by Wolfram Sang in 2012-14, version 20140204 - WTFPLv2
 #
 # Modified to use CCLIST for hardcoded list of receipients - Amit
 
-#opts="--nogit-fallback --norolestats --pattern-depth=1"
-#cover_opts="--no-m"
-cover_opts=""
-#patch_opts="--nol"
-patch_opts=""
+progname=$(basename "$0")
+#echo $progname
+
+if [ "$progname" = "git-smart-cc.sh" ]; then
+	cover_opts="--nogit --nogit-fallback --norolestats --l --nom"
+	patch_opts="--nogit --nogit-fallback --norolestats --l --nom"
+elif  [ "$progname" = "git-smart-to.sh" ]; then
+	cover_opts="--nogit --nogit-fallback --norolestats --m --r --nol --pattern-depth=1"
+	patch_opts="--nogit --nogit-fallback --norolestats --m --r --nol --pattern-depth=1"
+fi
 
 shopt -s extglob
 dir=${1%/*}
