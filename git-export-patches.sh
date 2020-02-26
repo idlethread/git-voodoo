@@ -22,7 +22,18 @@ if [ -d $DUMPDIR ]; then
 fi
 echo "Exporting patches to $DUMPDIR"
 
-git format-patch -M --subject-prefix="$STR" --cover-letter $SHA -o $DUMPDIR
+num=$(git patchnum $SHA | wc -l)
+
+# For a single patch, no cover-letter, no patch numbers
+# For upto 2 patches, no cover-letter
+# For > 2 patches, cover letter, patch numbers
+if [ $num -eq 1 ]; then
+	git format-patch -N -M --subject-prefix="$STR" $SHA -o $DUMPDIR
+elif [ $num -eq 2 ]; then
+	git format-patch -M --subject-prefix="$STR" $SHA -o $DUMPDIR
+else
+	git format-patch -M --subject-prefix="$STR" --cover-letter $SHA -o $DUMPDIR
+fi
 
 echo "Running checkpatch"
 ./scripts/checkpatch.pl  --strict --patch $DUMPDIR/*.patch
