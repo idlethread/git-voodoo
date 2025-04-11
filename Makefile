@@ -5,6 +5,8 @@ endif
 
 BINDIR = $(PREFIX)/bin
 files := $(wildcard *.sh)
+files += $(wildcard *.py)
+
 
 install:
 	install -d $(BINDIR)
