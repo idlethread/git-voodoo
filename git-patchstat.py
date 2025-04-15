@@ -52,6 +52,29 @@ def save_cache(repo_path, cache):
     with open(path, "w") as f:
         json.dump(cache, f)
 
+# ------------------ Commit metadata extraction ------------------------
+
+def get_commit_metadata(commit, cache, new_cache):
+    sha = commit.hexsha
+
+    if sha in cache:
+        entry = cache[sha]
+    else:
+        author = commit.author.name or ""
+        email = commit.author.email or ""
+        message = commit.message
+        year = datetime.fromtimestamp(commit.committed_date, UTC).year
+
+        entry = {
+            "author_name": author,
+            "author_email": email,
+            "message": message,
+            "year": year
+        }
+        new_cache[sha] = entry
+
+    return sha, entry["author_name"], entry["author_email"], entry["message"], entry["year"]
+
 # ------------------ Core contribution accounting function ------------------------
 
 def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2, verbosity=0):
@@ -79,28 +102,7 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2,
     for i, commit in enumerate(commits, 1):
         print(f"\rReading commit {i} / {total_commits}", end="", flush=True)
 
-        sha = commit.hexsha
-
-        if sha in cache:
-            entry = cache[sha]
-        else:
-            author = commit.author.name or ""
-            email = commit.author.email or ""
-            message = commit.message
-            year = datetime.fromtimestamp(commit.committed_date, UTC).year
-
-            entry = {
-                "author_name": author,
-                "author_email": email,
-                "message": message,
-                "year": year
-            }
-            new_cache[sha] = entry
-
-        year = entry["year"]
-        author = entry["author_name"]
-        email = entry["author_email"]
-        message = entry["message"]
+        sha, author, email, message, year = get_commit_metadata(commit, cache, new_cache)
 
         matched = False
         author_match = name_lower in author.lower() or name_lower in email.lower()
