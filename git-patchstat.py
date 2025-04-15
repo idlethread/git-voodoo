@@ -102,45 +102,45 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2,
     for i, commit in enumerate(commits, 1):
         print(f"\rReading commit {i} / {total_commits}", end="", flush=True)
 
-        sha, author, email, message, year = get_commit_metadata(commit, cache, new_cache)
+        tag_match = False
 
-        matched = False
+        sha, author, email, message, year = get_commit_metadata(commit, cache, new_cache)
         author_match = name_lower in author.lower() or name_lower in email.lower()
 
         if author_match:
             contributions["Author"][year] += 1
-            matched = True
+            tag_match = True
             email_usage[email].add(year)
             email_author_counts[email] += 1
+
+            if verbosity >= 2:
+                try:
+                    stats = commit.stats.files
+                    touched_dirs = set()
+                    for path in stats:
+                        parts = path.split("/")
+                        top_dir = "/".join(parts[:dir_depth]) if len(parts) >= dir_depth else path
+                        touched_dirs.add(top_dir)
+                        if path not in seen_files:
+                            dir_files[top_dir].add(path)
+                            seen_files.add(path)
+                    for top_dir in touched_dirs:
+                        dir_commits[top_dir] += 1
+                except Exception as e:
+                    if debug:
+                        print(f"\n[DEBUG] Could not count directories for commit {sha}: {e}")
 
         for tag in LINUX_TAGS:
             pattern = rf"{tag}:\s+.*{re.escape(name)}.*"
             matches = re.findall(pattern, message, re.IGNORECASE)
             if matches:
                 contributions[tag][year] += len(matches)
-                matched = True
+                tag_match = True
 
-        if matched:
+        if tag_match or author_match:
             all_years.add(year)
             if min_year is None or year < min_year:
                 min_year = year
-
-        if author_match and verbosity >= 2:
-            try:
-                stats = commit.stats.files
-                touched_dirs = set()
-                for path in stats:
-                    parts = path.split("/")
-                    top_dir = "/".join(parts[:dir_depth]) if len(parts) >= dir_depth else path
-                    touched_dirs.add(top_dir)
-                    if path not in seen_files:
-                        dir_files[top_dir].add(path)
-                        seen_files.add(path)
-                for top_dir in touched_dirs:
-                    dir_commits[top_dir] += 1
-            except Exception as e:
-                if debug:
-                    print(f"\n[DEBUG] Could not count directories for commit {sha}: {e}")
 
     print()
     cache.update(new_cache)
