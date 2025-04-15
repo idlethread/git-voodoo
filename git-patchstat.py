@@ -230,9 +230,10 @@ def print_table(contributions, years, name,
     if verbosity >= 2:
         print_top_directories(dir_commits, dir_files, top_limit, verbosity)
 
-def print_json(contributions, email_usage, email_author_counts,
+def print_json(contributions, name, email_usage, email_author_counts,
                dir_commits, dir_files, top_limit=5, verbosity=2):
     json_output = {
+        "name": name,
         "contributions": {
             tag: dict(sorted(years.items()))
             for tag, years in contributions.items()
@@ -250,21 +251,24 @@ def print_json(contributions, email_usage, email_author_counts,
             "author_commits": email_author_counts.get(email, 0)
         })
 
-    if dir_commits:
-        dirs_sorted = sorted(dir_commits.items(), key=lambda x: x[1], reverse=True)
-        if verbosity < 3:
-            dirs_sorted = dirs_sorted[:top_limit]
-        json_output["directories_by_commit"] = [
-            {"directory": d, "commits": count} for d, count in dirs_sorted
+    if dir_commits or dir_files:
+        all_dirs = set(dir_commits) | set(dir_files)
+
+        combined = [
+            {
+                "directory": d,
+                "commits": dir_commits.get(d, 0),
+                "files_changed": len(dir_files.get(d, set()))
+            }
+            for d in all_dirs
         ]
 
-    if dir_files:
-        files_sorted = sorted(dir_files.items(), key=lambda x: x[1], reverse=True)
+        combined = sorted(combined, key=lambda x: (x["commits"], x["files_changed"]), reverse=True)
+
         if verbosity < 3:
-            files_sorted = files_sorted[:top_limit]
-        json_output["directories_by_files"] = [
-            {"directory": d, "files_changed": count} for d, count in files_sorted
-        ]
+            combined = combined[:top_limit]
+
+        json_output["directories"] = combined
 
     print(json.dumps(json_output, indent=2))
 
@@ -319,7 +323,7 @@ def main():
         return
 
     if args.json:
-        print_json(contributions, email_usage, email_author_counts,
+        print_json(contributions, args.name, email_usage, email_author_counts,
                    dir_commits, dir_files, args.top, args.verbose)
     else:
         print_table(contributions, years, args.name,
