@@ -19,4 +19,3 @@ read -p "* Press 'y' to continue: " REPLY
 [ "$REPLY" == "y" ] || exit
 
 git filter-branch -f --msg-filter "cat && echo \"$STR\"" $START_SHA..HEAD
-

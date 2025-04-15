@@ -37,4 +37,3 @@ fi
 
 echo "Running checkpatch"
 ./scripts/checkpatch.pl  --strict --patch $DUMPDIR/*.patch
-
