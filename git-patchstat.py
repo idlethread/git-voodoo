@@ -203,7 +203,7 @@ def print_top_directories(dir_commits, dir_files, top_limit=5, verbosity=2):
     name_col_width = max(max_dir_name_len, 10)  # Minimum padding for aesthetics
 
     for dir_name, commits, files in combined:
-        print(f"  {dir_name:<{name_col_width}}  commits: {commits:<4}  files: {files:<3}")
+        print(f"  {dir_name:<{name_col_width}}  commits: {commits:>4}  files: {files:>3}")
 
 
 def print_table(contributions, years, name,
