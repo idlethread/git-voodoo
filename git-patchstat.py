@@ -180,7 +180,11 @@ def print_top_directories(dir_commits, dir_files, top_limit=5, verbosity=2):
     all_dirs = set(dir_commits) | set(dir_files)
 
     combined = [
-        (dir_name, dir_commits.get(dir_name, 0), dir_files.get(dir_name, 0))
+        (
+            dir_name,
+            dir_commits.get(dir_name, 0),
+            len(dir_files.get(dir_name, set()))
+        )
         for dir_name in all_dirs
     ]
 
