@@ -1,29 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-#
-# MIT License
-#
-# Copyright (c) 2020-2024 Amit Kucheria
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-#
-# git-patchstat.py - Git patch statistics utility
 
 from git import Repo
 from datetime import datetime, UTC
@@ -72,6 +48,7 @@ def load_cache(repo_path):
 
 def save_cache(repo_path, cache):
     path = get_cache_path(repo_path)
+    print(f"\n[INFO] Saving cache to {path}... Please do not interrupt.")
     with open(path, "w") as f:
         json.dump(cache, f)
 
@@ -170,7 +147,7 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2,
 
     return (contributions, min_year, sorted(all_years),
             email_usage, email_author_counts,
-            dir_commits, dir_files_count)
+            dir_commits, dir_files, bool(new_cache))
 
 # ------------------ Print helper functions ------------------------
 
@@ -269,7 +246,7 @@ def print_json(contributions, email_usage, email_author_counts,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze Git patch contributions for a specific contributor using GitPython.",
+        description="Analyze git patch contributions for a developer to a git repo.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
 Examples:
@@ -299,7 +276,7 @@ Examples:
 
     (contributions, min_year, years,
      email_usage, email_author_counts,
-     dir_commits, dir_files) = parse_git_commits(
+     dir_commits, dir_files, cache_updated) = parse_git_commits(
         args.name, args.repo, cache=cache,
         debug=args.debug, dir_depth=args.dir_depth,
         verbosity=args.verbose
@@ -319,7 +296,8 @@ Examples:
                     dir_commits, dir_files,
                     top_limit=args.top, verbosity=args.verbose)
 
-    save_cache(args.repo, cache)
+    if cache_updated:
+        save_cache(args.repo, cache)
     t3 = time.time()
 
     if args.debug:
