@@ -81,7 +81,7 @@ def get_commit_metadata(commit, cache, new_cache):
 
 # ------------------ Core contribution accounting function ------------------------
 
-def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=None, dir_depth=2, verbosity=0):
+def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=None, dir_depth=3, verbosity=0):
     repo = Repo(repo_path)
     commits = list(repo.iter_commits("--all"))
     total_commits = len(commits)
