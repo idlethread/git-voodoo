@@ -14,11 +14,13 @@ from collections import defaultdict
 
 # ------------------ Constants ------------------------
 
+# Tags to look for in message body, Author is not a tag in the body, it is read from the commit object
 LINUX_TAGS = [
     "Signed-off-by", "Acked-by", "Reviewed-by",
     "Reported-by", "Tested-by", "Cc", "Co-developed-by"
 ]
 
+# Order in which to display contributions
 DISPLAY_TAGS = [
     "Author",
     "Co-developed-by",
