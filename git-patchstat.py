@@ -10,6 +10,7 @@ import os
 import hashlib
 import argparse
 import time
+import tempfile
 from collections import defaultdict
 
 # ------------------ Constants ------------------------
@@ -80,7 +81,7 @@ def get_commit_metadata(commit, cache, new_cache):
 
 # ------------------ Core contribution accounting function ------------------------
 
-def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2, verbosity=0):
+def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=None, dir_depth=2, verbosity=0):
     repo = Repo(repo_path)
     commits = list(repo.iter_commits("--all"))
     total_commits = len(commits)
@@ -134,6 +135,8 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2,
                         top_dir = "/".join(dirs[:depth]) if dirs else "."
                         touched_dirs.add(top_dir)
                         if path not in seen_files:
+                            if debug:
+                                print(f"email: {email[:30]:<30} file: {path[:55]:<55} sha: {sha[:15]:<15}", file=debug_file)
                             dir_files[top_dir].add(path)
                             seen_files.add(path)
                     for top_dir in touched_dirs:
@@ -268,18 +271,19 @@ def print_json(contributions, email_usage, email_author_counts,
 # ------------------ Main entry point ------------------------
 
 def main():
+    debug_log = None
     parser = argparse.ArgumentParser(
         description="Analyze git patch contributions for a developer to a git repo.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
-Examples:
-  git-patchstat.py "Amit Kucheria"            # Basic stats
-  git-patchstat.py "Amit Kucheria" -v         # Include email usage
-  git-patchstat.py "Amit Kucheria" -vv        # Also include top directories
-  git-patchstat.py "Amit Kucheria" -vvv       # Show all directories/files
-  git-patchstat.py "Amit Kucheria" --json     # JSON output
-  git-patchstat.py "Amit Kucheria" --repo /path/to/linux --dir-depth 2 --top 10
-"""
+        Examples:
+        git-patchstat.py "Amit Kucheria"            # Basic stats
+        git-patchstat.py "Amit Kucheria" -v         # Include email usage
+        git-patchstat.py "Amit Kucheria" -vv        # Also include top directories
+        git-patchstat.py "Amit Kucheria" -vvv       # Show all directories/files
+        git-patchstat.py "Amit Kucheria" --json     # JSON output
+        git-patchstat.py "Amit Kucheria" --repo /path/to/linux --dir-depth 2 --top 10
+        """
     )
 
     parser.add_argument("name", help="Contributor name to search for")
@@ -297,13 +301,17 @@ Examples:
     cache = load_cache(args.repo)
     t1 = time.time()
 
+    if args.debug:
+        debug_log = tempfile.NamedTemporaryFile(mode='w', delete=False, prefix="git-patchstat-debug-", suffix=".log")
+        print(f"[DEBUG] Logging to {debug_log.name}")
+
     (contributions, min_year, years,
      email_usage, email_author_counts,
      dir_commits, dir_files, cache_updated) = parse_git_commits(
-        args.name, args.repo, cache=cache,
-        debug=args.debug, dir_depth=args.dir_depth,
-        verbosity=args.verbose
-    )
+         args.name, args.repo, cache=cache,
+         debug=args.debug, debug_file=debug_log, dir_depth=args.dir_depth,
+         verbosity=args.verbose
+     )
     t2 = time.time()
 
     if not years:
@@ -325,10 +333,13 @@ Examples:
 
     if args.debug:
         print("\n[DEBUG] Execution time breakdown:")
-        print(f"  Load cache:        {t1 - t0:.2f} s")
-        print(f"  Analyze commits:   {t2 - t1:.2f} s")
-        print(f"  Save cache:        {t3 - t2:.2f} s")
-        print(f"  Total:             {t3 - t0:.2f} s")
+        print(f"  Load cache:        {t1 - t0:.2f} s", file=debug_log)
+        print(f"  Analyze commits:   {t2 - t1:.2f} s", file=debug_log)
+        print(f"  Save cache:        {t3 - t2:.2f} s", file=debug_log)
+        print(f"  Total:             {t3 - t0:.2f} s", file=debug_log)
+        if debug_log:
+            debug_log.close()
+            print(f"[DEBUG] Debug log written to {debug_log.name}")
 
 if __name__ == "__main__":
     main()
