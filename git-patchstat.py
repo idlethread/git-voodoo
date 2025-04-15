@@ -27,7 +27,8 @@ DISPLAY_TAGS = [
     "Reviewed-by",
     "Reported-by",
     "Tested-by",
-    "Cc"
+    "Cc",
+    "Merges"
 ]
 
 # ------------------ Cache helper functions ------------------------
@@ -108,6 +109,12 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2,
         author_match = name_lower in author.lower() or name_lower in email.lower()
 
         if author_match:
+            if len(commit.parents) > 1:
+                contributions["Merges"][year] += 1
+                email_usage[email].add(year)
+                email_author_counts[email] += 1
+                continue              # merge commits don't count in Author or Sign-offs
+
             contributions["Author"][year] += 1
             tag_match = True
             email_usage[email].add(year)
