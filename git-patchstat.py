@@ -125,8 +125,11 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, dir_depth=2,
                     stats = commit.stats.files
                     touched_dirs = set()
                     for path in stats:
+                        # Show full path (minus filename) if path less that dir_depth, else truncate
                         parts = path.split("/")
-                        top_dir = "/".join(parts[:dir_depth]) if len(parts) >= dir_depth else path
+                        dirs = parts[:-1]
+                        depth = min(len(dirs), dir_depth)
+                        top_dir = "/".join(dirs[:depth]) if dirs else "."
                         touched_dirs.add(top_dir)
                         if path not in seen_files:
                             dir_files[top_dir].add(path)
