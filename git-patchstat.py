@@ -193,8 +193,13 @@ def print_top_directories(dir_commits, dir_files, top_limit=5, verbosity=2):
     else:
         combined = sorted(combined, key=lambda x: (x[1], x[2]), reverse=True)
 
+    # Determine dynamic width for dir_name column
+    max_dir_name_len = max(len(d) for d in all_dirs)
+    name_col_width = max(max_dir_name_len, 10)  # Minimum padding for aesthetics
+
     for dir_name, commits, files in combined:
-        print(f"  {dir_name:<30} commits: {commits:<4}  files: {files}")
+        print(f"  {dir_name:<{name_col_width}}  commits: {commits:<4}  files: {files:<3}")
+
 
 def print_table(contributions, years, name,
                 email_usage, email_author_counts,
