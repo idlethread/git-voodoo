@@ -166,7 +166,87 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
             email_usage, email_author_counts,
             dir_commits, dir_files, bool(new_cache))
 
+# ------------------ Parsing MAINTAINERS file  ------------------------
+
+def find_community_responsibilities(name, maintainers_path="MAINTAINERS"):
+    responsibilities = []
+
+    with open(maintainers_path, "r", encoding="utf-8") as f:
+        block = []
+        for line in f:
+            if line.strip() == "":
+                subsystem_info = process_block(block, name)
+                if subsystem_info:
+                    responsibilities.append(subsystem_info)
+                block = []
+            else:
+                block.append(line)
+        if block:
+            subsystem_info = process_block(block, name)
+            if subsystem_info:
+                responsibilities.append(subsystem_info)
+
+    return responsibilities
+
+def process_block(block, name):
+    name_lower = name.lower()
+    title = None
+    maintainers = []
+    reviewers = []
+    file_globs = []
+
+    matched_line = None
+    role = None
+
+    for line in block:
+        if not line.startswith((" ", "\t")) and not title:
+            title = line.strip()
+        elif line.startswith("M:"):
+            maintainers.append(line[2:].strip())
+            if name_lower in line.lower():
+                matched_line = line.strip()
+                role = "maintainer"
+        elif line.startswith("R:"):
+            reviewers.append(line[2:].strip())
+            if name_lower in line.lower():
+                matched_line = line.strip()
+                role = "reviewer" if role != "maintainer" else "both"
+        elif line.startswith("F:"):
+            file_globs.append(line[2:].strip())
+
+    if matched_line:
+        return {
+            "subsystem": title or "<unknown>",
+            "role": role,
+            "matched_line": matched_line,
+            "maintainers": maintainers,
+            "reviewers": reviewers,
+            "files": file_globs,
+        }
+
+    return None
+
 # ------------------ Print helper functions ------------------------
+
+def print_community_responsibilities(responsibilities, verbosity):
+    maintained = [r for r in responsibilities if r["role"] in ("maintainer", "both")]
+    reviewed = [r for r in responsibilities if r["role"] in ("reviewer", "both")]
+
+    if maintained:
+        print("\nMaintainer for:")
+        for idx, entry in enumerate(maintained, 1):
+            print(f" {idx:>2}. {entry['subsystem']}")
+            if verbosity >= 2 and entry["files"]:
+                for f in entry["files"]:
+                    print(f"     F: {f}")
+
+    if reviewed:
+        print("\nReviewer for:")
+        for idx, entry in enumerate(reviewed, 1):
+            print(f" {idx:>2}. {entry['subsystem']}")
+            if verbosity >= 2 and entry["files"]:
+                for f in entry["files"]:
+                    print(f"     F: {f}")
 
 def print_email_summary(email_usage, email_author_counts):
     print("\nEmail usage history:")
@@ -325,11 +405,20 @@ def main():
     if args.json:
         print_json(contributions, args.name, email_usage, email_author_counts,
                    dir_commits, dir_files, args.top, args.verbose)
-    else:
-        print_table(contributions, years, args.name,
-                    email_usage, email_author_counts,
-                    dir_commits, dir_files,
-                    top_limit=args.top, verbosity=args.verbose)
+
+    print_table(contributions, years, args.name,
+                email_usage, email_author_counts,
+                dir_commits, dir_files,
+                top_limit=args.top, verbosity=args.verbose)
+
+    if args.verbose >= 1:
+        maintainers_path = os.path.join(args.repo, "MAINTAINERS")
+        if os.path.exists(maintainers_path):
+            responsibilities = find_community_responsibilities(args.name, maintainers_path)
+            if responsibilities:
+                print_community_responsibilities(responsibilities, args.verbose)
+        else:
+            print("[INFO] No MAINTAINERS file found in repo.")
 
     if cache_updated:
         save_cache(args.repo, cache)
