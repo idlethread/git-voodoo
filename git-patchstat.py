@@ -358,7 +358,7 @@ def print_table(contributions, years, name,
         print_top_directories(dir_commits, dir_files, top_limit, verbosity)
 
 def print_json(contributions, name, email_usage, email_author_counts,
-               dir_commits, dir_files, top_limit=5, verbosity=2):
+               dir_commits, dir_files, top_limit=5, verbosity=2, output_path=None):
     json_output = {
         "name": name,
         "contributions": {
@@ -397,7 +397,9 @@ def print_json(contributions, name, email_usage, email_author_counts,
 
         json_output["directories"] = combined
 
-    print(json.dumps(json_output, indent=2))
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(json_output, f, indent=2)
+    print(f"[INFO] JSON output written to: {output_path}")
 
 # ------------------ Main entry point ------------------------
 
@@ -413,6 +415,7 @@ def main():
         git-patchstat.py "Amit Kucheria" -vv        # Also include top directories
         git-patchstat.py "Amit Kucheria" -vvv       # Show all directories/files
         git-patchstat.py "Amit Kucheria" --json     # JSON output
+        git-patchstat.py "Amit Kucheria" --json-path results/amit.json # Specify the JSON file to write to
         git-patchstat.py "Amit Kucheria" --repo /path/to/linux --dir-depth 2 --top 10
         """
     )
@@ -421,7 +424,10 @@ def main():
     parser.add_argument("--repo", default=".", help="Path to the Git repo (default: current directory)")
     parser.add_argument("--dir-depth", type=int, default=2, help="Directory depth to track (default: 2)")
     parser.add_argument("--top", type=int, default=5, help="Limit for top directories/files (default: 5)")
-    parser.add_argument("--json", action="store_true", help="Print results in JSON format")
+    parser.add_argument("--json", action="store_true",
+                        help="Enable JSON output (writes to file in /tmp if --json-path not specified)")
+    parser.add_argument("--json-path", nargs="?", const="AUTO", default=None,
+                        help="Write JSON output to a file. If used without --json, it still saves the file.")
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Increase output verbosity: -v (email), -vv (dirs), -vvv (everything)")
     parser.add_argument("-d", "--debug", action="store_true", help="Print debug timing info")
@@ -449,9 +455,25 @@ def main():
         print(f"No contributions found for '{args.name}'.")
         return
 
-    if args.json:
+    output_path = None
+    write_json = args.json or args.json_path is not None
+
+    if write_json:
+        if args.json_path:
+            output_path = args.json_path
+            if output_path == "AUTO":
+                tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", prefix="git-patchstat-", dir="/tmp")
+                output_path = tmp_file.name
+                tmp_file.close()
+        elif args.json:
+            tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", prefix="git-patchstat-", dir="/tmp")
+            output_path = tmp_file.name
+            tmp_file.close()
+
         print_json(contributions, args.name, email_usage, email_author_counts,
-                   dir_commits, dir_files, args.top, args.verbose)
+                   dir_commits, dir_files,
+                   top_limit=args.top, verbosity=args.verbose,
+                   output_path=output_path)
 
     print_table(contributions, years, args.name,
                 email_usage, email_author_counts,
