@@ -460,20 +460,12 @@ def main():
 
     if write_json:
         if args.json_path:
-            output_path = args.json_path
-            if output_path == "AUTO":
-                tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", prefix="git-patchstat-", dir="/tmp")
-                output_path = tmp_file.name
-                tmp_file.close()
-        elif args.json:
+            if os.path.isfile(args.json_path):
+                output_path = args.json_path
+        else:
             tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", prefix="git-patchstat-", dir="/tmp")
             output_path = tmp_file.name
             tmp_file.close()
-
-        print_json(contributions, args.name, email_usage, email_author_counts,
-                   dir_commits, dir_files,
-                   top_limit=args.top, verbosity=args.verbose,
-                   output_path=output_path)
 
     print_table(contributions, years, args.name,
                 email_usage, email_author_counts,
@@ -488,17 +480,25 @@ def main():
                 print_community_responsibilities(responsibilities, args.verbose)
         else:
             print("[INFO] No MAINTAINERS file found in repo.")
+    t3 = time.time()
+
+    if write_json:
+        print_json(contributions, args.name, email_usage, email_author_counts,
+                   dir_commits, dir_files,
+                   top_limit=args.top, verbosity=args.verbose,
+                   output_path=output_path)
 
     if cache_updated:
         save_cache(args.repo, cache)
-    t3 = time.time()
+    t4 = time.time()
 
     if args.debug:
         print("\n[DEBUG] Execution time breakdown:")
-        print(f"  Load cache:        {t1 - t0:.2f} s", file=debug_log)
-        print(f"  Analyze commits:   {t2 - t1:.2f} s", file=debug_log)
-        print(f"  Save cache:        {t3 - t2:.2f} s", file=debug_log)
-        print(f"  Total:             {t3 - t0:.2f} s", file=debug_log)
+        print(f"  Load cache:          {t1 - t0:.2f} s", file=debug_log)
+        print(f"  Analyze commits:     {t2 - t1:.2f} s", file=debug_log)
+        print(f"  Analyze MAINTAINERS: {t3 - t2:.2f} s", file=debug_log)
+        print(f"  Save cache:          {t4 - t3:.2f} s", file=debug_log)
+        print(f"  Total:               {t4 - t0:.2f} s", file=debug_log)
         if debug_log:
             debug_log.close()
             print(f"[DEBUG] Debug log written to {debug_log.name}")
