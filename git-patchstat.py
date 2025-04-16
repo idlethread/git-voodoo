@@ -210,7 +210,7 @@ def process_block(block, name):
             reviewers.append(line[2:].strip())
             if name_lower in line.lower():
                 matched_line = line.strip()
-                role = "reviewer" if role != "maintainer" else "both"
+                role = "reviewer"
         elif line.startswith("F:"):
             file_globs.append(line[2:].strip())
 
