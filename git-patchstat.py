@@ -5,6 +5,7 @@ from git import Repo
 from datetime import datetime, UTC
 import re
 import sys
+import glob
 import json
 import os
 import hashlib
@@ -188,40 +189,85 @@ def find_community_responsibilities(name, maintainers_path="MAINTAINERS"):
 
     return responsibilities
 
+
+def count_files_and_lines(file_globs):
+    matched_files = set()
+    total_lines = 0
+
+    for pattern in file_globs:
+        if os.path.isdir(pattern):
+            # Recursively walk the directory
+            for root, _, files in os.walk(pattern):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if file_path not in matched_files:
+                        matched_files.add(file_path)
+                        try:
+                            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                                total_lines += sum(1 for _ in f)
+                        except Exception as e:
+                            print(f"[WARN] Could not read file {file_path}: {e}")
+        else:
+            # Try glob matching
+            for file_path in glob.glob(pattern, recursive=True):
+                if os.path.isfile(file_path) and file_path not in matched_files:
+                    matched_files.add(file_path)
+                    try:
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            total_lines += sum(1 for _ in f)
+                    except Exception as e:
+                        print(f"[WARN] Could not read file {file_path}: {e}")
+
+    return len(matched_files), total_lines
+
+
 def process_block(block, name):
     name_lower = name.lower()
     title = None
     maintainers = []
     reviewers = []
     file_globs = []
+    matched_globs = []
 
     matched_line = None
     role = None
+    matched = False
 
     for line in block:
         if not line.startswith((" ", "\t")) and not title:
             title = line.strip()
         elif line.startswith("M:"):
-            maintainers.append(line[2:].strip())
-            if name_lower in line.lower():
+            maintainer = line[2:].strip()
+            maintainers.append(maintainer)
+            if name_lower in maintainer.lower() and role is None:
                 matched_line = line.strip()
                 role = "maintainer"
+                matched = True
         elif line.startswith("R:"):
-            reviewers.append(line[2:].strip())
-            if name_lower in line.lower():
+            reviewer = line[2:].strip()
+            reviewers.append(reviewer)
+            if name_lower in reviewer.lower() and role is None:
                 matched_line = line.strip()
                 role = "reviewer"
+                matched = True
         elif line.startswith("F:"):
-            file_globs.append(line[2:].strip())
+            glob_line = line[2:].strip()
+            file_globs.append(glob_line)
+            if matched:
+                matched_globs.append(glob_line)
 
     if matched_line:
+        file_count, line_count = count_files_and_lines(matched_globs)
+
         return {
             "subsystem": title or "<unknown>",
             "role": role,
             "matched_line": matched_line,
             "maintainers": maintainers,
             "reviewers": reviewers,
-            "files": file_globs,
+            "files": matched_globs,  # Only relevant globs
+            "file_count": file_count,
+            "line_count": line_count
         }
 
     return None
@@ -229,13 +275,13 @@ def process_block(block, name):
 # ------------------ Print helper functions ------------------------
 
 def print_community_responsibilities(responsibilities, verbosity):
-    maintained = [r for r in responsibilities if r["role"] in ("maintainer", "both")]
-    reviewed = [r for r in responsibilities if r["role"] in ("reviewer", "both")]
+    maintained = [r for r in responsibilities if r["role"] == "maintainer"]
+    reviewed = [r for r in responsibilities if r["role"] == "reviewer"]
 
     if maintained:
         print("\nMaintainer for:")
         for idx, entry in enumerate(maintained, 1):
-            print(f" {idx:>2}. {entry['subsystem']}")
+            print(f" {idx:>2}. {entry['subsystem'][:50]:<70} ({entry['file_count']:>4} files, {entry['line_count']:>7} lines)")
             if verbosity >= 2 and entry["files"]:
                 for f in entry["files"]:
                     print(f"     F: {f}")
@@ -243,10 +289,11 @@ def print_community_responsibilities(responsibilities, verbosity):
     if reviewed:
         print("\nReviewer for:")
         for idx, entry in enumerate(reviewed, 1):
-            print(f" {idx:>2}. {entry['subsystem']}")
+            print(f" {idx:>2}. {entry['subsystem'][:50]:<70} ({entry['file_count']:>4} files, {entry['line_count']:>7} lines)")
             if verbosity >= 2 and entry["files"]:
                 for f in entry["files"]:
                     print(f"     F: {f}")
+
 
 def print_email_summary(email_usage, email_author_counts):
     print("\nEmail usage history:")
