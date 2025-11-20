@@ -16,7 +16,7 @@ from collections import defaultdict
 
 # ------------------ Constants ------------------------
 
-# Tags to look for in message body, Author is not a tag in the body, it is read from the commit object
+# Tags to look for in message body. Author is not a tag in the body, it is read from the commit object.
 LINUX_TAGS = [
     "Signed-off-by", "Acked-by", "Reviewed-by",
     "Reported-by", "Tested-by", "Cc", "Co-developed-by"
@@ -61,7 +61,6 @@ def save_cache(repo_path, cache):
 
 def get_commit_metadata(commit, cache, new_cache):
     sha = commit.hexsha
-
     if sha in cache:
         entry = cache[sha]
     else:
@@ -69,7 +68,6 @@ def get_commit_metadata(commit, cache, new_cache):
         email = commit.author.email or ""
         message = commit.message
         year = datetime.fromtimestamp(commit.committed_date, UTC).year
-
         entry = {
             "author_name": author,
             "author_email": email,
@@ -77,7 +75,6 @@ def get_commit_metadata(commit, cache, new_cache):
             "year": year
         }
         new_cache[sha] = entry
-
     return sha, entry["author_name"], entry["author_email"], entry["message"], entry["year"]
 
 # ------------------ Core contribution accounting function ------------------------
@@ -86,14 +83,12 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
     repo = Repo(repo_path)
     commits = list(repo.iter_commits("--all"))
     total_commits = len(commits)
-
     new_cache = {}
     contributions = defaultdict(lambda: defaultdict(int))
     all_years = set()
     min_year = None
     email_usage = defaultdict(set)
     email_author_counts = defaultdict(int)
-
     if verbosity >= 2:
         dir_commits = defaultdict(int)
         dir_files = defaultdict(set)
@@ -106,9 +101,7 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
 
     for i, commit in enumerate(commits, 1):
         print(f"\rReading commit {i} / {total_commits}", end="", flush=True)
-
         tag_match = False
-
         sha, author, email, message, year = get_commit_metadata(commit, cache, new_cache)
         author_match = name_lower in author.lower() or name_lower in email.lower()
 
@@ -117,8 +110,7 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
                 contributions["Merges"][year] += 1
                 email_usage[email].add(year)
                 email_author_counts[email] += 1
-                continue              # merge commits don't count in Author or Sign-offs
-
+                continue # merge commits don't count in Author or Sign-offs
             contributions["Author"][year] += 1
             tag_match = True
             email_usage[email].add(year)
@@ -144,34 +136,28 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
                         dir_commits[top_dir] += 1
                 except Exception as e:
                     if debug:
-                        print(f"\n[DEBUG] Could not count directories for commit {sha}: {e}")
-
+                        print(f"\n[DEBUG] Could not count directories for commit {sha}: {e}", file=debug_file)
         for tag in LINUX_TAGS:
             pattern = rf"{tag}:\s+.*{re.escape(name)}.*"
             matches = re.findall(pattern, message, re.IGNORECASE)
             if matches:
                 contributions[tag][year] += len(matches)
                 tag_match = True
-
         if tag_match or author_match:
             all_years.add(year)
             if min_year is None or year < min_year:
                 min_year = year
-
     print()
     cache.update(new_cache)
-
     dir_files_count = {k: len(v) for k, v in dir_files.items()} if verbosity >= 2 else {}
+    return (contributions, min_year, sorted(all_years), email_usage, email_author_counts, dir_commits, dir_files, bool(new_cache))
 
-    return (contributions, min_year, sorted(all_years),
-            email_usage, email_author_counts,
-            dir_commits, dir_files, bool(new_cache))
-
-# ------------------ Parsing MAINTAINERS file  ------------------------
+# ------------------ Parsing MAINTAINERS file ------------------------
 
 def find_community_responsibilities(name, maintainers_path="MAINTAINERS"):
     responsibilities = []
-
+    if not os.path.exists(maintainers_path):
+        return responsibilities
     with open(maintainers_path, "r", encoding="utf-8") as f:
         block = []
         for line in f:
@@ -186,14 +172,11 @@ def find_community_responsibilities(name, maintainers_path="MAINTAINERS"):
             subsystem_info = process_block(block, name)
             if subsystem_info:
                 responsibilities.append(subsystem_info)
-
     return responsibilities
-
 
 def count_files_and_lines(file_globs):
     matched_files = set()
     total_lines = 0
-
     for pattern in file_globs:
         if os.path.isdir(pattern):
             # Recursively walk the directory
@@ -217,9 +200,7 @@ def count_files_and_lines(file_globs):
                             total_lines += sum(1 for _ in f)
                     except Exception as e:
                         print(f"[WARN] Could not read file {file_path}: {e}")
-
     return len(matched_files), total_lines
-
 
 def process_block(block, name):
     name_lower = name.lower()
@@ -228,11 +209,9 @@ def process_block(block, name):
     reviewers = []
     file_globs = []
     matched_globs = []
-
     matched_line = None
     role = None
     matched = False
-
     for line in block:
         if not line.startswith((" ", "\t")) and not title:
             title = line.strip()
@@ -255,21 +234,18 @@ def process_block(block, name):
             file_globs.append(glob_line)
             if matched:
                 matched_globs.append(glob_line)
-
     if matched_line:
         file_count, line_count = count_files_and_lines(matched_globs)
-
         return {
-            "subsystem": title or "<unknown>",
+            "subsystem": title or "",
             "role": role,
             "matched_line": matched_line,
             "maintainers": maintainers,
             "reviewers": reviewers,
-            "files": matched_globs,  # Only relevant globs
+            "files": matched_globs, # Only relevant globs
             "file_count": file_count,
             "line_count": line_count
         }
-
     return None
 
 # ------------------ Print helper functions ------------------------
@@ -284,19 +260,20 @@ def print_community_responsibilities(responsibilities, verbosity):
             print(f" {idx:>2}. {entry['subsystem'][:50]:<70} ({entry['file_count']:>4} files, {entry['line_count']:>7} lines)")
             if verbosity >= 2 and entry["files"]:
                 for f in entry["files"]:
-                    print(f"     F: {f}")
-
+                    print(f"      F: {f}")
     if reviewed:
         print("\nReviewer for:")
         for idx, entry in enumerate(reviewed, 1):
             print(f" {idx:>2}. {entry['subsystem'][:50]:<70} ({entry['file_count']:>4} files, {entry['line_count']:>7} lines)")
             if verbosity >= 2 and entry["files"]:
                 for f in entry["files"]:
-                    print(f"     F: {f}")
-
+                    print(f"      F: {f}")
 
 def print_email_summary(email_usage, email_author_counts):
     print("\nEmail usage history:")
+    if not email_usage:
+        print(" No emails found.")
+        return
     max_email_length = max(len(email) for email in email_usage)
     sorted_emails = sorted(email_usage.items(), key=lambda item: min(item[1]))
     for email, year_set in sorted_emails:
@@ -304,61 +281,47 @@ def print_email_summary(email_usage, email_author_counts):
         last = max(year_set)
         count = email_author_counts.get(email, 0)
         print(
-            f"  [{first} - {last}]  {email.ljust(max_email_length)}  ({str(count).rjust(4)} commit{'s' if count != 1 else ''})"
+            f" [{first} - {last}] {email.ljust(max_email_length)} ({str(count).rjust(4)} commit{'s' if count != 1 else ''})"
         )
 
 def print_top_directories(dir_commits, dir_files, top_limit=5, verbosity=2):
     print("\nTop modified directories (commits and unique files):")
     all_dirs = set(dir_commits) | set(dir_files)
-
     combined = [
-        (
-            dir_name,
-            dir_commits.get(dir_name, 0),
-            len(dir_files.get(dir_name, set()))
-        )
+        (dir_name, dir_commits.get(dir_name, 0), len(dir_files.get(dir_name, set())))
         for dir_name in all_dirs
     ]
-
     if verbosity < 3:
         combined = sorted(combined, key=lambda x: (x[1], x[2]), reverse=True)[:top_limit]
     else:
         combined = sorted(combined, key=lambda x: (x[1], x[2]), reverse=True)
-
-    # Determine dynamic width for dir_name column
-    max_dir_name_len = max(len(d) for d in all_dirs)
-    name_col_width = max(max_dir_name_len, 10)  # Minimum padding for aesthetics
-
+    max_dir_name_len = max(len(d) for d in all_dirs) if all_dirs else 10
+    name_col_width = max(max_dir_name_len, 10)
     for dir_name, commits, files in combined:
-        print(f"  {dir_name:<{name_col_width}}  commits: {commits:>4}  files: {files:>3}")
-
+        print(f" {dir_name:<{name_col_width}} commits: {commits:>4} files: {files:>3}")
 
 def print_table(contributions, years, name,
                 email_usage, email_author_counts,
                 dir_commits, dir_files,
                 top_limit=5, verbosity=0):
-
     if years:
         title = f"Contributions by {name} ({years[0]} - {years[-1]})"
     else:
         title = f"Contributions by {name}"
-
     print(f"\n{title}")
     print(f"{'Tag':<15} {'Total':>6} | " + " ".join(f"{year:>6}" for year in years))
     print("-" * (15 + 6 + 3 + 7 * len(years)))
-
     for tag in DISPLAY_TAGS:
         total = sum(contributions[tag].values())
         year_data = " ".join(f"{contributions[tag].get(year, 0):>6}" for year in years)
         print(f"{tag:<15} {total:>6} | {year_data}")
-
     if verbosity >= 1:
         print_email_summary(email_usage, email_author_counts)
     if verbosity >= 2:
         print_top_directories(dir_commits, dir_files, top_limit, verbosity)
 
 def print_json(contributions, name, email_usage, email_author_counts,
-               dir_commits, dir_files, top_limit=5, verbosity=2, output_path=None):
+                dir_commits, dir_files, top_limit=5, verbosity=2, output_path=None):
     json_output = {
         "name": name,
         "contributions": {
@@ -368,7 +331,6 @@ def print_json(contributions, name, email_usage, email_author_counts,
         },
         "email_usage": []
     }
-
     sorted_emails = sorted(email_usage.items(), key=lambda item: min(item[1]))
     for email, year_set in sorted_emails:
         json_output["email_usage"].append({
@@ -380,7 +342,6 @@ def print_json(contributions, name, email_usage, email_author_counts,
 
     if dir_commits or dir_files:
         all_dirs = set(dir_commits) | set(dir_files)
-
         combined = [
             {
                 "directory": d,
@@ -389,38 +350,109 @@ def print_json(contributions, name, email_usage, email_author_counts,
             }
             for d in all_dirs
         ]
-
         combined = sorted(combined, key=lambda x: (x["commits"], x["files_changed"]), reverse=True)
-
         if verbosity < 3:
             combined = combined[:top_limit]
-
         json_output["directories"] = combined
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(json_output, f, indent=2)
-    print(f"[INFO] JSON output written to: {output_path}")
+    if output_path:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(json_output, f, indent=2)
+        print(f"[INFO] JSON output written to: {output_path}")
+    else:
+        print(json.dumps(json_output, indent=2))
+
+# ------------------ Shared developer stats routine ------------------------
+
+def process_developer_stats(name, args, cache):
+    """
+    Unified routine for both interactive and non-interactive modes.
+    Handles debug log, commit parsing, output, and responsibilities.
+    All runtime config comes from args; only 'name' and 'cache' vary per invocation.
+    """
+    debug_file = None
+    if args.debug:
+        tmpf = tempfile.NamedTemporaryFile(
+            mode='w', delete=False,
+            prefix="git-patchstat-debug-", suffix=".log"
+        )
+        debug_file = tmpf
+        print(f"[DEBUG] Logging to {debug_file.name}")
+
+    (
+        contributions, min_year, years,
+        email_usage, email_author_counts,
+        dir_commits, dir_files, cache_updated
+    ) = parse_git_commits(
+        name, args.repo, cache=cache,
+        debug=args.debug, debug_file=debug_file,
+        dir_depth=args.dir_depth, verbosity=args.verbose
+    )
+
+    if not years:
+        print(f"No contributions found for '{name}'.")
+        if debug_file:
+            debug_file.close()
+        return cache_updated
+
+    output_path = None
+    write_json = args.json or args.json_path is not None
+    if write_json:
+        if args.json_path and args.json_path != "AUTO":
+            output_path = args.json_path
+        else:
+            tmp_file = tempfile.NamedTemporaryFile(
+                mode='w', delete=False,
+                suffix=".json", prefix="git-patchstat-", dir="/tmp"
+            )
+            output_path = tmp_file.name
+            tmp_file.close()
+
+    if write_json:
+        print_json(
+            contributions, name, email_usage, email_author_counts,
+            dir_commits, dir_files, top_limit=args.top, verbosity=args.verbose,
+            output_path=output_path
+        )
+    else:
+        print_table(
+            contributions, years, name, email_usage, email_author_counts,
+            dir_commits, dir_files, top_limit=args.top, verbosity=args.verbose
+        )
+
+    if args.verbose >= 1:
+        maintainers_path = os.path.join(args.repo, "MAINTAINERS")
+        if os.path.exists(maintainers_path):
+            responsibilities = find_community_responsibilities(name, maintainers_path)
+            if responsibilities:
+                print_community_responsibilities(responsibilities, args.verbose)
+        else:
+            print("[INFO] No MAINTAINERS file found in repo.")
+
+    if debug_file:
+        debug_file.close()
+        print(f"[DEBUG] Debug log written to {debug_file.name}")
+
+    return cache_updated
 
 # ------------------ Main entry point ------------------------
 
 def main():
-    debug_log = None
     parser = argparse.ArgumentParser(
         description="Analyze git patch contributions for a developer to a git repo.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""
-        Examples:
-        git-patchstat.py "Amit Kucheria"            # Basic stats
-        git-patchstat.py "Amit Kucheria" -v         # Include email usage
-        git-patchstat.py "Amit Kucheria" -vv        # Also include top directories
-        git-patchstat.py "Amit Kucheria" -vvv       # Show all directories/files
-        git-patchstat.py "Amit Kucheria" --json     # JSON output
-        git-patchstat.py "Amit Kucheria" --json-path results/amit.json # Specify the JSON file to write to
-        git-patchstat.py "Amit Kucheria" --repo /path/to/linux --dir-depth 2 --top 10
-        """
-    )
-
-    parser.add_argument("name", help="Contributor name to search for")
+Examples:
+  git-patchstat.py "Amit Kucheria" # Basic stats
+  git-patchstat.py "Amit Kucheria" -v # Include email usage
+  git-patchstat.py "Amit Kucheria" -vv # Also include top directories
+  git-patchstat.py "Amit Kucheria" -vvv # Show all directories/files
+  git-patchstat.py "Amit Kucheria" --json # JSON output
+  git-patchstat.py --interactive         # Prompt repeatedly
+  git-patchstat.py --repo /path/to/linux --dir-depth 2 --top 10
+""")
+    parser.add_argument("name", nargs="?", help="Contributor name to search for (omit for --interactive mode)")
+    parser.add_argument("-i", "--interactive", action="store_true", help="Interactive mode: prompt for developer names")
     parser.add_argument("--repo", default=".", help="Path to the Git repo (default: current directory)")
     parser.add_argument("--dir-depth", type=int, default=2, help="Directory depth to track (default: 2)")
     parser.add_argument("--top", type=int, default=5, help="Limit for top directories/files (default: 5)")
@@ -433,75 +465,33 @@ def main():
     parser.add_argument("-d", "--debug", action="store_true", help="Print debug timing info")
 
     args = parser.parse_args()
-
-    t0 = time.time()
     cache = load_cache(args.repo)
-    t1 = time.time()
 
-    if args.debug:
-        debug_log = tempfile.NamedTemporaryFile(mode='w', delete=False, prefix="git-patchstat-debug-", suffix=".log")
-        print(f"[DEBUG] Logging to {debug_log.name}")
+    if args.interactive:
+        print("\nInteractive mode: type developer names to get stats. Type 'exit' or blank to quit.\n")
+        try:
+            while True:
+                name = input("Enter developer name (or 'exit' to quit): ").strip()
+                if not name or name.lower() == "exit":
+                    print("Exiting interactive mode.")
+                    break
+                cache_updated = process_developer_stats(name, args, cache)
+                if not (args.json or args.json_path is not None):
+                    input("Press SPACE and Enter to continue, or Ctrl+C to exit... ")
+                if cache_updated:
+                    save_cache(args.repo, cache)
+        except KeyboardInterrupt:
+            print("\nExiting interactive mode.")
+            sys.exit(0)
+        sys.exit(0)
 
-    (contributions, min_year, years,
-     email_usage, email_author_counts,
-     dir_commits, dir_files, cache_updated) = parse_git_commits(
-         args.name, args.repo, cache=cache,
-         debug=args.debug, debug_file=debug_log, dir_depth=args.dir_depth,
-         verbosity=args.verbose
-     )
-    t2 = time.time()
-
-    if not years:
-        print(f"No contributions found for '{args.name}'.")
-        return
-
-    output_path = None
-    write_json = args.json or args.json_path is not None
-
-    if write_json:
-        if args.json_path:
-            if os.path.isfile(args.json_path):
-                output_path = args.json_path
-        else:
-            tmp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", prefix="git-patchstat-", dir="/tmp")
-            output_path = tmp_file.name
-            tmp_file.close()
-
-    print_table(contributions, years, args.name,
-                email_usage, email_author_counts,
-                dir_commits, dir_files,
-                top_limit=args.top, verbosity=args.verbose)
-
-    if args.verbose >= 1:
-        maintainers_path = os.path.join(args.repo, "MAINTAINERS")
-        if os.path.exists(maintainers_path):
-            responsibilities = find_community_responsibilities(args.name, maintainers_path)
-            if responsibilities:
-                print_community_responsibilities(responsibilities, args.verbose)
-        else:
-            print("[INFO] No MAINTAINERS file found in repo.")
-    t3 = time.time()
-
-    if write_json:
-        print_json(contributions, args.name, email_usage, email_author_counts,
-                   dir_commits, dir_files,
-                   top_limit=args.top, verbosity=args.verbose,
-                   output_path=output_path)
-
+    # --- Non-interactive mode ---
+    if not args.name:
+        print("Error: You must either provide a developer name or use --interactive mode.")
+        sys.exit(1)
+    cache_updated = process_developer_stats(args.name, args, cache)
     if cache_updated:
         save_cache(args.repo, cache)
-    t4 = time.time()
-
-    if args.debug:
-        print("\n[DEBUG] Execution time breakdown:")
-        print(f"  Load cache:          {t1 - t0:.2f} s", file=debug_log)
-        print(f"  Analyze commits:     {t2 - t1:.2f} s", file=debug_log)
-        print(f"  Analyze MAINTAINERS: {t3 - t2:.2f} s", file=debug_log)
-        print(f"  Save cache:          {t4 - t3:.2f} s", file=debug_log)
-        print(f"  Total:               {t4 - t0:.2f} s", file=debug_log)
-        if debug_log:
-            debug_log.close()
-            print(f"[DEBUG] Debug log written to {debug_log.name}")
 
 if __name__ == "__main__":
     main()
