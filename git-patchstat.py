@@ -57,36 +57,80 @@ def save_cache(repo_path, cache):
     with open(path, "w") as f:
         json.dump(cache, f)
 
-# ------------------ Commit metadata extraction ------------------------
+# ------------------ Commit indexing (in-memory) ------------------------
 
-def get_commit_metadata(commit, cache, new_cache):
-    sha = commit.hexsha
-    if sha in cache:
-        entry = cache[sha]
-    else:
-        author = commit.author.name or ""
-        email = commit.author.email or ""
-        message = commit.message
-        year = datetime.fromtimestamp(commit.committed_date, UTC).year
-        entry = {
-            "author_name": author,
-            "author_email": email,
-            "message": message,
-            "year": year
-        }
-        new_cache[sha] = entry
-    return sha, entry["author_name"], entry["author_email"], entry["message"], entry["year"]
+def build_commit_index(repo_path, cache):
+    """Walk the repo exactly once and return an in-memory list of all commit
+    metadata, so that repeated searches (interactive mode) never re-walk git.
 
-# ------------------ Core contribution accounting function ------------------------
+    Each element is a tuple of pre-computed, search-ready fields:
+        (sha, author_lower, email_lower, email, year, is_merge, message_lower)
 
-def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=None, dir_depth=3, verbosity=0):
+    Lower-cased variants are stored so per-search matching is a plain substring
+    test with no re-lowercasing. `cache` (the persistent per-sha JSON) is used to
+    skip re-parsing commit objects across runs and is augmented with any newly
+    seen commits. Returns (index, cache_updated).
+    """
     repo = Repo(repo_path)
     commits = list(repo.iter_commits("--all"))
     total_commits = len(commits)
-    new_cache = {}
+    index = []
+    new_entries = 0
+
+    for i, commit in enumerate(commits, 1):
+        if i % 1000 == 0 or i == total_commits:
+            print(f"\rIndexing commit {i} / {total_commits}", end="", flush=True)
+        sha = commit.hexsha
+        entry = cache.get(sha)
+        # Older caches predate "is_merge"; treat them as incomplete and refresh.
+        if entry is None or "is_merge" not in entry:
+            entry = {
+                "author_name": commit.author.name or "",
+                "author_email": commit.author.email or "",
+                "message": commit.message,
+                "year": datetime.fromtimestamp(commit.committed_date, UTC).year,
+                "is_merge": len(commit.parents) > 1,
+            }
+            cache[sha] = entry
+            new_entries += 1
+        email = entry["author_email"]
+        index.append((
+            sha,
+            entry["author_name"].lower(),
+            email.lower(),
+            email,
+            entry["year"],
+            entry["is_merge"],
+            entry["message"].lower(),
+        ))
+    print()
+    return index, new_entries > 0
+
+def _commit_files(repo, sha, memo):
+    """Return the list of file paths touched by a commit, memoised per process.
+
+    Only called for the matched author's non-merge commits under -vv, so the
+    memo stays small and the expensive per-commit diff runs at most once."""
+    if memo is not None and sha in memo:
+        return memo[sha]
+    files = list(repo.commit(sha).stats.files.keys())
+    if memo is not None:
+        memo[sha] = files
+    return files
+
+# ------------------ Core contribution accounting function ------------------------
+
+def analyze_contributions(name, index, repo=None, stats_memo=None,
+                          debug=False, debug_file=None, dir_depth=3, verbosity=0):
+    """Search the pre-built in-memory `index` for a developer's contributions.
+
+    Performs no git walking: it iterates the list produced by
+    build_commit_index. File-stat lookups (verbosity >= 2) are fetched lazily
+    via `repo` and memoised in `stats_memo`.
+    """
+    name_lower = name.lower()
     contributions = defaultdict(lambda: defaultdict(int))
     all_years = set()
-    min_year = None
     email_usage = defaultdict(set)
     email_author_counts = defaultdict(int)
     if verbosity >= 2:
@@ -97,16 +141,23 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
         dir_commits = {}
         dir_files = {}
 
-    name_lower = name.lower()
+    # A tag line can only match if the developer's name appears in the message,
+    # so the substring pre-filter in the loop lets us skip these regexes for the
+    # vast majority of commits. Patterns run against the lower-cased message.
+    tag_patterns = [
+        (tag, re.compile(rf"{re.escape(tag.lower())}:\s+.*{re.escape(name_lower)}.*"))
+        for tag in LINUX_TAGS
+    ]
 
-    for i, commit in enumerate(commits, 1):
-        print(f"\rReading commit {i} / {total_commits}", end="", flush=True)
+    for sha, author_lower, email_lower, email, year, is_merge, message_lower in index:
+        author_match = name_lower in author_lower or name_lower in email_lower
+        name_in_message = name_lower in message_lower
+        if not (author_match or name_in_message):
+            continue
+
         tag_match = False
-        sha, author, email, message, year = get_commit_metadata(commit, cache, new_cache)
-        author_match = name_lower in author.lower() or name_lower in email.lower()
-
         if author_match:
-            if len(commit.parents) > 1:
+            if is_merge:
                 contributions["Merges"][year] += 1
                 email_usage[email].add(year)
                 email_author_counts[email] += 1
@@ -118,9 +169,8 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
 
             if verbosity >= 2:
                 try:
-                    stats = commit.stats.files
                     touched_dirs = set()
-                    for path in stats:
+                    for path in _commit_files(repo, sha, stats_memo):
                         # Show full path (minus filename) if path less that dir_depth, else truncate
                         parts = path.split("/")
                         dirs = parts[:-1]
@@ -137,20 +187,19 @@ def parse_git_commits(name, repo_path=".", cache=None, debug=False, debug_file=N
                 except Exception as e:
                     if debug:
                         print(f"\n[DEBUG] Could not count directories for commit {sha}: {e}", file=debug_file)
-        for tag in LINUX_TAGS:
-            pattern = rf"{tag}:\s+.*{re.escape(name)}.*"
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            if matches:
-                contributions[tag][year] += len(matches)
-                tag_match = True
+
+        if name_in_message:
+            for tag, pattern in tag_patterns:
+                matches = pattern.findall(message_lower)
+                if matches:
+                    contributions[tag][year] += len(matches)
+                    tag_match = True
+
         if tag_match or author_match:
             all_years.add(year)
-            if min_year is None or year < min_year:
-                min_year = year
-    print()
-    cache.update(new_cache)
-    dir_files_count = {k: len(v) for k, v in dir_files.items()} if verbosity >= 2 else {}
-    return (contributions, min_year, sorted(all_years), email_usage, email_author_counts, dir_commits, dir_files, bool(new_cache))
+
+    return (contributions, sorted(all_years), email_usage,
+            email_author_counts, dir_commits, dir_files)
 
 # ------------------ Parsing MAINTAINERS file ------------------------
 
@@ -364,11 +413,11 @@ def print_json(contributions, name, email_usage, email_author_counts,
 
 # ------------------ Shared developer stats routine ------------------------
 
-def process_developer_stats(name, args, cache):
+def process_developer_stats(name, args, index, repo=None, stats_memo=None):
     """
     Unified routine for both interactive and non-interactive modes.
-    Handles debug log, commit parsing, output, and responsibilities.
-    All runtime config comes from args; only 'name' and 'cache' vary per invocation.
+    Handles debug log, contribution analysis, output, and responsibilities.
+    Searches the pre-built in-memory `index`; only 'name' varies per invocation.
     """
     debug_file = None
     if args.debug:
@@ -380,11 +429,11 @@ def process_developer_stats(name, args, cache):
         print(f"[DEBUG] Logging to {debug_file.name}")
 
     (
-        contributions, min_year, years,
+        contributions, years,
         email_usage, email_author_counts,
-        dir_commits, dir_files, cache_updated
-    ) = parse_git_commits(
-        name, args.repo, cache=cache,
+        dir_commits, dir_files
+    ) = analyze_contributions(
+        name, index, repo=repo, stats_memo=stats_memo,
         debug=args.debug, debug_file=debug_file,
         dir_depth=args.dir_depth, verbosity=args.verbose
     )
@@ -393,7 +442,7 @@ def process_developer_stats(name, args, cache):
         print(f"No contributions found for '{name}'.")
         if debug_file:
             debug_file.close()
-        return cache_updated
+        return
 
     output_path = None
     write_json = args.json or args.json_path is not None
@@ -433,8 +482,6 @@ def process_developer_stats(name, args, cache):
         debug_file.close()
         print(f"[DEBUG] Debug log written to {debug_file.name}")
 
-    return cache_updated
-
 # ------------------ Main entry point ------------------------
 
 def main():
@@ -465,7 +512,17 @@ Examples:
     parser.add_argument("-d", "--debug", action="store_true", help="Print debug timing info")
 
     args = parser.parse_args()
+
+    # Build the in-memory commit index exactly once. Every subsequent search
+    # (especially in interactive mode) runs purely against this list with no
+    # further git walking, so repeated lookups are near-instant.
     cache = load_cache(args.repo)
+    index, cache_updated = build_commit_index(args.repo, cache)
+    if cache_updated:
+        save_cache(args.repo, cache)
+    # Shared repo handle + per-process memo for lazy file-stat lookups (-vv).
+    repo = Repo(args.repo)
+    stats_memo = {}
 
     if args.interactive:
         print("\nInteractive mode: type developer names to get stats. Type 'exit' or blank to quit.\n")
@@ -475,11 +532,9 @@ Examples:
                 if not name or name.lower() == "exit":
                     print("Exiting interactive mode.")
                     break
-                cache_updated = process_developer_stats(name, args, cache)
+                process_developer_stats(name, args, index, repo=repo, stats_memo=stats_memo)
                 if not (args.json or args.json_path is not None):
                     input("Press SPACE and Enter to continue, or Ctrl+C to exit... ")
-                if cache_updated:
-                    save_cache(args.repo, cache)
         except KeyboardInterrupt:
             print("\nExiting interactive mode.")
             sys.exit(0)
@@ -489,9 +544,7 @@ Examples:
     if not args.name:
         print("Error: You must either provide a developer name or use --interactive mode.")
         sys.exit(1)
-    cache_updated = process_developer_stats(args.name, args, cache)
-    if cache_updated:
-        save_cache(args.repo, cache)
+    process_developer_stats(args.name, args, index, repo=repo, stats_memo=stats_memo)
 
 if __name__ == "__main__":
     main()
